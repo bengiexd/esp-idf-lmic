@@ -78,10 +78,6 @@ void hal_pin_rst (u1_t val);
  */
 u1_t hal_spi (u1_t outval);
 
-u1_t hal_spi_read (u1_t address);
-
-void hal_spi_write (uint8_t *data, int length);
-
 /*
  * disable all CPU interrupts.
  *   - might be invoked nested

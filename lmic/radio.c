@@ -281,32 +281,24 @@ static u1_t randbuf[16];
 static void writeReg (u1_t addr, u1_t data ) {
     //printf("Writing addr: 0x%X with data: 0x%X\n", addr, data);
     hal_pin_nss(0);
-    uint8_t preparedData[2];
-    preparedData[0] = addr | 0x80;
-    preparedData[1] = data;
-    hal_spi_write(preparedData, 2);
+    hal_spi(addr | 0x80);
+    hal_spi(data);
     hal_pin_nss(1);
 }
 
 static u1_t readReg (u1_t addr) {
-    //printf("Reading addr: 0x%X from LoRa module\n", addr);
     hal_pin_nss(0);
-    //hal_spi(addr & 0x7F);
-    u1_t val = hal_spi_read(addr & 0x7F);
+    u1_t val = hal_spi(addr & 0x7F);
     hal_pin_nss(1);
-    //printf("Read value: 0x%X from readReg\n", val);
     return val;
 }
 
 static void writeBuf (u1_t addr, xref2u1_t buf, u1_t len) {
     ESP_LOGI(TAG, "Writing buffer to LoRa module");
     hal_pin_nss(0);
-    uint8_t data[2];
-    data[0] = (addr | 0x80);
+    hal_spi(addr | 0x80);
     for (u1_t i=0; i<len; i++) {
-        uint8_t d = (uint8_t) buf[i];
-        data[1] = d;
-        hal_spi_write(data, 2);
+        hal_spi(buf[i]);
     }
     hal_pin_nss(1);
     ESP_LOGI(TAG, "Finished writing buffer to LoRa module");

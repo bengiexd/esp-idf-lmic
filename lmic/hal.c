@@ -153,29 +153,17 @@ void hal_pin_rst (u1_t val){
 }
 
 // Write data. first element of data pointer is address
-void hal_spi_write (uint8_t *data, int length){
-    ESP_LOGI(TAG, "Writing values via SPI with length: %d | address: 0x%X, data: 0x%X", length, address, data[1]);
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length = length * 8;
-    t.tx_buffer = data;
-    esp_err_t ret = spi_device_transmit(spi_handle, &t);
-    assert(ret == ESP_OK);
-
-}
-
-//Read data
-u1_t hal_spi_read (u1_t address){
-    uint8_t buf;
-    uint8_t readRegister = (uint8_t) address;
+u1_t hal_spi(u1_t data){
+    uint8_t rxData;
     spi_transaction_t t;
     memset(&t, 0, sizeof(t));
     t.length = 8;
-    t.tx_buffer = &readRegister;
-    t.rx_buffer= &buf;
+    t.tx_buffer = data;
+    t.rx_buffer = &rxData;
     esp_err_t ret = spi_device_transmit(spi_handle, &t);
     assert(ret == ESP_OK);
-    return (u1_t) buf;
+
+    return (u1_t) rxData;
 }
 
 /*

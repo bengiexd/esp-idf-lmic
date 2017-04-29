@@ -279,17 +279,19 @@ static u1_t randbuf[16];
 
 
 static void writeReg (u1_t addr, u1_t data ) {
-    //printf("Writing addr: 0x%X with data: 0x%X\n", addr, data);
     hal_pin_nss(0);
     hal_spi(addr | 0x80);
-    hal_spi(data);
+    u1_t val = hal_spi(data);
     hal_pin_nss(1);
+    //ESP_LOGI(TAG, "Write address: 0x%X with value: 0x%X| sent back val: 0x%X", addr, data, val);
 }
 
 static u1_t readReg (u1_t addr) {
     hal_pin_nss(0);
-    u1_t val = hal_spi(addr & 0x7F);
+    hal_spi(addr & 0x7F);
+    u1_t val = hal_spi(0x00);
     hal_pin_nss(1);
+    //ESP_LOGI(TAG, "Read address: 0x%X with value: 0x%X", addr, val);
     return val;
 }
 

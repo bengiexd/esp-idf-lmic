@@ -30,21 +30,27 @@
 static const char* TAG = "LMIC_HAL";
 int x_irq_level = 0;
 
-// Function that gets executed when GPIO interrupt is triggered
-void IRAM_ATTR gpio_isr_handler(void* arg){
+void time_init(){
+    ESP_LOGI(TAG, "Starting initialisation of timer");
+    int timer_group = TIMER_GROUP_0;
+    int timer_idx = TIMER_1;
+    timer_config_t config;
+    config.alarm_en = 0;
+    config.auto_reload = 0;
+    config.counter_dir = TIMER_COUNT_UP;
+    config.divider = 120;
+    config.intr_type = 0;
+    config.counter_en = TIMER_PAUSE;
+    /*Configure timer*/
+    timer_init(timer_group, timer_idx, &config);
+    /*Stop timer counter*/
+    timer_pause(timer_group, timer_idx);
+    /*Load counter value */
+    timer_set_counter_value(timer_group, timer_idx, 0x0);
+    /*Start timer counter*/
+    timer_start(timer_group, timer_idx);
 
-    // printf("GPIO ISR HANDLER\n");
-    // ESP_LOGI(TAG, "ISR handler called with value: %d", gpio_num);
-
-    xTaskCreate(&isr_handler_task, "isr_handler_task", 2048, arg, 8, NULL);
-}
-
-// Task for handling interrupt
-void isr_handler_task(void *pvParameter){
-    uint32_t gpio_num = (uint32_t) pvParameter;
-    ESP_LOGI(TAG, "GPIO Interrupt triggered. GPIO_PIN: %d", gpio_num);
-    radio_irq_handler((u1_t) gpio_num);
-    vTaskDelete(NULL);
+    ESP_LOGI(TAG, "Finished initalisation of timer");
 }
 
 void io_init(){
@@ -59,24 +65,38 @@ void io_init(){
     io_config.pull_up_en = 0;
     gpio_config(&io_config);
 
-    io_config.intr_type = GPIO_PIN_INTR_POSEDGE;
+    //set input
     io_config.pin_bit_mask = ((1 << LORA_DO0) | (1 << LORA_DO1) | (1 << LORA_DO2));
     io_config.mode = GPIO_MODE_INPUT;
-    io_config.pull_down_en = 1;
     gpio_config(&io_config);
 
-    ret = gpio_install_isr_service(0);
-    assert(ret == ESP_OK);
-
-    // Set handlers for interrupts
-    ret = gpio_isr_handler_add(LORA_DO0, gpio_isr_handler, (void *) LORA_DO0);
-    assert(ret == ESP_OK);
-    ret = gpio_isr_handler_add(LORA_DO1, gpio_isr_handler, (void *) LORA_DO1);
-    assert(ret == ESP_OK);
-    ret = gpio_isr_handler_add(LORA_DO2, gpio_isr_handler, (void *) LORA_DO2);
-    assert(ret == ESP_OK);
-
     ESP_LOGI(TAG, "Finished initialisation of IO");
+}
+
+static int NUM_DIO = 3;
+bool dio_states[3];
+
+void hal_io_check() {
+    if (dio_states[0] != gpio_get_level(LORA_DO0)) {
+        dio_states[0] = !dio_states[0];
+        if (dio_states[0])
+            printf("Fired IRQ0\n");
+            radio_irq_handler(0);
+    }
+
+    if (dio_states[1] != gpio_get_level(LORA_DO1)) {
+        dio_states[1] = !dio_states[1];
+        if (dio_states[1])
+            printf("Fired IRQ1\n");
+            radio_irq_handler(1);
+    }
+
+    if (dio_states[2] != gpio_get_level(LORA_DO2)) {
+        dio_states[2] = !dio_states[2];
+        if (dio_states[2])
+            printf("Fired IRQ2\n");
+            radio_irq_handler(2);
+    }
 }
 
 void spi_init(){
@@ -96,9 +116,9 @@ void spi_init(){
     spi_device_interface_config_t devcfg={
         .clock_speed_hz = 10000000,
         .mode = 1,
-        .spics_io_num = SPI_CS,
+        .spics_io_num = -1,
         .queue_size = 7,
-        .flags = SPI_DEVICE_HALFDUPLEX,
+        //.flags = SPI_DEVICE_HALFDUPLEX,
     };
 
     ret = spi_bus_initialize(HSPI_HOST, &buscfg, 1);
@@ -119,8 +139,7 @@ void hal_init (void){
 
     spi_init();
     io_init();
-
-    //TODO: init timer
+    time_init();
 
     ESP_LOGI(TAG, "Finished initialisation of HAL");
 }
@@ -129,11 +148,8 @@ void hal_init (void){
  * drive radio NSS pin (0=low, 1=high).
  */
 void hal_pin_nss (u1_t val){
-    //ESP_LOGD(TAG, "Settting NSS Pin to: %d", val);
-    if(!val)
-        gpio_set_level(SPI_CS, 0);
-    else
-        gpio_set_level(SPI_CS, 1);
+    //ESP_LOGI(TAG, "Settting NSS Pin to: %d", val);
+    gpio_set_level(SPI_CS, val);
 }
 
 /*
@@ -148,17 +164,36 @@ void hal_pin_rxtx (u1_t val){
  */
 void hal_pin_rst (u1_t val){
     ESP_LOGI(TAG, "Resetting LORA radio");
-    gpio_set_level(LORA_RST, val);
+    if(val == 0 || val == 1) { // drive pin
+      gpio_config_t io_conf;
+      io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+      io_conf.mode = GPIO_MODE_OUTPUT;
+      io_conf.pin_bit_mask = (1 << LORA_RST);
+      io_conf.pull_down_en = 0;
+      io_conf.pull_up_en = 0;
+      gpio_config(&io_conf);
+
+      gpio_set_level(LORA_RST, val);
+    } else { // keep pin floating
+      gpio_config_t io_conf;
+      io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+      io_conf.mode = GPIO_MODE_INPUT;
+      io_conf.pin_bit_mask = (1 << LORA_RST);
+      io_conf.pull_down_en = 0;
+      io_conf.pull_up_en = 0;
+      gpio_config(&io_conf);
+    }
     ESP_LOGI(TAG, "Finished resetting LORA radio");
 }
 
 // Write data. first element of data pointer is address
 u1_t hal_spi(u1_t data){
-    uint8_t rxData;
+    uint8_t rxData = 0;
     spi_transaction_t t;
     memset(&t, 0, sizeof(t));
     t.length = 8;
-    t.tx_buffer = data;
+    t.rxlength = 8;
+    t.tx_buffer = &data;
     t.rx_buffer = &rxData;
     esp_err_t ret = spi_device_transmit(spi_handle, &t);
     assert(ret == ESP_OK);
@@ -184,10 +219,10 @@ void hal_disableIRQs (void){
  */
 void hal_enableIRQs (void){
     ESP_LOGD(TAG, "Enable interrupts");
-    if(!x_irq_level){
+    if(--x_irq_level == 0){
         //taskENABLE_INTERRUPTS();
+        hal_io_check();
     }
-    x_irq_level--;
 }
 
 /*
@@ -203,9 +238,6 @@ void hal_sleep (void){
 u4_t hal_ticks (void){
     uint64_t val;
     timer_get_counter_value(TIMER_GROUP_0, TIMER_1, &val);
-    if(val > 0xFFFFFFFF){
-        printf("TIMER VALUE: %d\n",(int)val);
-    }
     ESP_LOGD(TAG, "Getting time ticks");
     uint32_t t = (uint32_t) val;
     //u4_t result = (u4_t) us2osticks(t);
